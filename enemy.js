@@ -3,10 +3,10 @@
  * No pathfinding; simple direct movement with wall collision.
  */
 
-/** Visual scale for rendered sprite size only (Chaser, Charger, Sniper, Splitter). Collision uses unscaled w/h. */
-const ENEMY_VISUAL_SCALE = 1.12;
-/** Visual scale for Boss sprite only (~8–10%). Collision unchanged. */
-const BOSS_VISUAL_SCALE = 1.09;
+/** Render scale for Chaser, Charger, Sniper, Splitter (60–75% larger). Collision uses unscaled w/h. Tune here for future adjustments. */
+const ENEMY_RENDER_SCALE = 1.65;
+/** Render scale for Boss (~20–25% larger). Collision unchanged. */
+const BOSS_RENDER_SCALE = 1.22;
 
 /**
  * Picks a random center position inside the room's walkable floor.
@@ -136,19 +136,20 @@ export class Enemy {
   draw(ctx, sprites = {}) {
     const sprite = sprites['chaser'];
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-      const drawW = this.w * ENEMY_VISUAL_SCALE;
-      const drawH = this.h * ENEMY_VISUAL_SCALE;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const drawW = this.w * ENEMY_RENDER_SCALE;
+      const drawH = this.h * ENEMY_RENDER_SCALE;
       const left = this.x - drawW / 2;
       const top = this.y - drawH / 2;
       const now = performance.now();
       const flashing = this.hitUntil != null && now < this.hitUntil;
       if (flashing) {
-        ctx.save();
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.03);
         ctx.filter = 'brightness(2)';
       }
       ctx.drawImage(sprite, left, top, drawW, drawH);
-      if (flashing) ctx.restore();
+      ctx.restore();
     }
   }
 }
@@ -258,19 +259,20 @@ export class Charger {
   draw(ctx, sprites = {}) {
     const sprite = sprites['charger'];
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-      const drawW = this.w * ENEMY_VISUAL_SCALE;
-      const drawH = this.h * ENEMY_VISUAL_SCALE;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const drawW = this.w * ENEMY_RENDER_SCALE;
+      const drawH = this.h * ENEMY_RENDER_SCALE;
       const left = this.x - drawW / 2;
       const top = this.y - drawH / 2;
       const now = performance.now();
       const flashing = this.hitUntil != null && now < this.hitUntil;
       if (flashing) {
-        ctx.save();
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.03);
         ctx.filter = 'brightness(2)';
       }
       ctx.drawImage(sprite, left, top, drawW, drawH);
-      if (flashing) ctx.restore();
+      ctx.restore();
     }
   }
 }
@@ -388,19 +390,20 @@ export class Sniper {
   draw(ctx, sprites = {}) {
     const sprite = sprites['sniper'];
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-      const drawW = this.w * ENEMY_VISUAL_SCALE;
-      const drawH = this.h * ENEMY_VISUAL_SCALE;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const drawW = this.w * ENEMY_RENDER_SCALE;
+      const drawH = this.h * ENEMY_RENDER_SCALE;
       const left = this.x - drawW / 2;
       const top = this.y - drawH / 2;
       const now = performance.now();
       const flashing = this.hitUntil != null && now < this.hitUntil;
       if (flashing) {
-        ctx.save();
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.03);
         ctx.filter = 'brightness(2)';
       }
       ctx.drawImage(sprite, left, top, drawW, drawH);
-      if (flashing) ctx.restore();
+      ctx.restore();
     }
   }
 }
@@ -456,18 +459,19 @@ export class Splitter {
   draw(ctx, sprites = {}) {
     const sprite = sprites['splitter'];
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-      const drawW = this.w * ENEMY_VISUAL_SCALE;
-      const drawH = this.h * ENEMY_VISUAL_SCALE;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const drawW = this.w * ENEMY_RENDER_SCALE;
+      const drawH = this.h * ENEMY_RENDER_SCALE;
       const left = this.x - drawW / 2;
       const top = this.y - drawH / 2;
       const flashing = this.hitUntil != null && performance.now() < this.hitUntil;
       if (flashing) {
-        ctx.save();
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.03);
         ctx.filter = 'brightness(2)';
       }
       ctx.drawImage(sprite, left, top, drawW, drawH);
-      if (flashing) ctx.restore();
+      ctx.restore();
     }
   }
 }
@@ -604,19 +608,20 @@ export class Boss {
   draw(ctx, sprites = {}) {
     const sprite = sprites['boss'];
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-      const drawW = this.w * BOSS_VISUAL_SCALE;
-      const drawH = this.h * BOSS_VISUAL_SCALE;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const drawW = this.w * BOSS_RENDER_SCALE;
+      const drawH = this.h * BOSS_RENDER_SCALE;
       const left = this.x - drawW / 2;
       const top = this.y - drawH / 2;
       const now = performance.now();
       const flashing = this.hitUntil != null && now < this.hitUntil;
       if (flashing) {
-        ctx.save();
         ctx.globalAlpha = 0.5 + 0.5 * Math.sin(performance.now() * 0.03);
         ctx.filter = 'brightness(2)';
       }
       ctx.drawImage(sprite, left, top, drawW, drawH);
-      if (flashing) ctx.restore();
+      ctx.restore();
     }
   }
 }
