@@ -67,84 +67,198 @@ const ctx = canvas.getContext('2d');
 
 // --- Input state (keys currently held) ---
 const keys = new Set();
+// Global mouse position in canvas coordinates
+let mx = 0;
+let my = 0;
 
 function onKeyDown(e) {
+  if (inputMode === 'upgrade') {
+    if (!upgradeChoices) return;
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+      upgradeSelectedIndex = upgradeSelectedIndex === 0 ? 1 : 0;
+      audioManager.play('menu_hover', 'ui');
+      return;
+    }
+    if (e.code === 'Digit1') {
+      audioManager.play('menu_select', 'ui');
+      handleUpgradeSelect(0);
+      return;
+    }
+    if (e.code === 'Digit2') {
+      audioManager.play('menu_select', 'ui');
+      handleUpgradeSelect(1);
+      return;
+    }
+    if (e.code === 'Enter') {
+      audioManager.play('menu_select', 'ui');
+      handleUpgradeSelect(upgradeSelectedIndex);
+      return;
+    }
+    if (!['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'Tab'].includes(e.code)) {
+      audioManager.play('menu_error', 'ui');
+    }
+    return;
+  }
+  if (inputMode === 'modal' && settingsOpen) {
+    if (settingsOpen && e.code === 'Escape') {
+      closeSettingsModal();
+    }
+    return;
+  }
+  if (e.code === 'KeyM') {
+    audioManager.toggleMute();
+    if (!audioManager.muted.master) {
+      audioManager.play('menu_select', 'ui');
+      setAmbient(gameState === 'MENU' ? 'menu' : 'gameplay');
+    }
+    return;
+  }
+  if (settingsOpen && e.code === 'Escape') {
+    closeSettingsModal();
+    return;
+  }
+  if (gameState === 'PLAYING') {
+    if (e.code === 'Escape') {
+      setPaused(!isPaused);
+      return;
+    }
+    if (isPaused) {
+      if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+        pauseSelectedIndex = (pauseSelectedIndex + (e.code === 'ArrowUp' ? -1 : 1) + 3) % 3;
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'Enter') {
+        handlePauseSelect(pauseSelectedIndex);
+        audioManager.play('menu_select', 'ui');
+        return;
+      }
+      return;
+    }
+  }
+  if (settingsOpen) return;
   if (gameState === 'MENU') {
     if (menuScreen === 'help') {
-      if (e.code === 'Enter' || e.code === 'Escape') { menuScreen = 'main'; menuTransitionAlpha = 0; }
+      if (e.code === 'Enter' || e.code === 'Escape') {
+        audioManager.play('menu_back', 'ui');
+        menuScreen = 'main';
+        startMenuTransition();
+      }
       return;
     }
     if (menuScreen === 'heroes') {
       const heroIds = getAllHeroIds();
-      if (e.code === 'Escape') { menuScreen = 'main'; menuTransitionAlpha = 0; return; }
-      if (e.code === 'ArrowLeft') { menuSelectedIndex = (menuSelectedIndex - 1 + heroIds.length) % heroIds.length; return; }
-      if (e.code === 'ArrowRight') { menuSelectedIndex = (menuSelectedIndex + 1) % heroIds.length; return; }
+      if (e.code === 'Escape') {
+        audioManager.play('menu_back', 'ui');
+        menuScreen = 'main';
+        startMenuTransition();
+        return;
+      }
+      if (e.code === 'ArrowLeft') {
+        menuSelectedIndex = (menuSelectedIndex - 1 + heroIds.length) % heroIds.length;
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'ArrowRight') {
+        menuSelectedIndex = (menuSelectedIndex + 1) % heroIds.length;
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
       if (e.code === 'KeyS') {
         const heroId = heroIds[menuSelectedIndex];
         const progress = getHeroProgress(heroId);
-        if (progress && progress.unlocked) setSelectedHeroId(heroId);
+        if (progress && progress.unlocked) {
+          setSelectedHeroId(heroId);
+          audioManager.play('hero_select', 'ui');
+        }
         return;
       }
       if (e.code === 'Enter') {
+        audioManager.play('menu_select', 'ui');
         const heroId = heroIds[menuSelectedIndex];
         const progress = getHeroProgress(heroId);
-        if (!progress.unlocked) { unlockHero(heroId); return; }
+        if (!progress.unlocked) {
+          unlockHero(heroId);
+          audioManager.play('hero_unlock', 'ui');
+          return;
+        }
         upgradeHero(heroId);
+        audioManager.play('upgrade_success', 'ui');
         return;
       }
       return;
     }
     if (menuScreen === 'enemies') {
       const enemyIds = ['chaser', 'charger', 'sniper', 'splitter', 'boss'];
-      if (e.code === 'Escape') { menuScreen = 'main'; menuTransitionAlpha = 0; return; }
-      if (e.code === 'ArrowLeft') { menuSelectedIndex = (menuSelectedIndex - 1 + enemyIds.length) % enemyIds.length; enemyTransitionAlpha = 0; return; }
-      if (e.code === 'ArrowRight') { menuSelectedIndex = (menuSelectedIndex + 1) % enemyIds.length; enemyTransitionAlpha = 0; return; }
-      return;
-    }
-    if (menuScreen === 'loadout') {
-      const slotCount = EQUIPMENT_SLOTS.length;
-      const totalRows = 1 + slotCount + 1;
-      if (e.code === 'Escape') { menuScreen = 'main'; menuTransitionAlpha = 0; return; }
-      if (e.code === 'ArrowUp') { menuSelectedIndex = (menuSelectedIndex - 1 + totalRows) % totalRows; return; }
-      if (e.code === 'ArrowDown') { menuSelectedIndex = (menuSelectedIndex + 1) % totalRows; return; }
-      if (e.code === 'Enter') {
-        const heroIds = getAllHeroIds().filter((id) => isHeroUnlocked(id));
-        if (menuSelectedIndex === 0) {
-          if (!heroIds.length) return;
-          const idx = heroIds.indexOf(getSelectedHeroId());
-          const next = heroIds[(idx + 1) % heroIds.length];
-          setSelectedHeroId(next);
-          return;
-        }
-        if (menuSelectedIndex === totalRows - 1) { menuScreen = 'main'; menuTransitionAlpha = 0; return; }
-        const heroId = getSelectedHeroId();
-        const slotIndex = menuSelectedIndex - 1;
-        const slot = EQUIPMENT_SLOTS[slotIndex];
-        const owned = getOwnedGearIds().filter((id) => GEAR_CATALOG[id] && GEAR_CATALOG[id].slot === slot);
-        const current = getEquippedGear(heroId)[slot];
-        let next = null;
-        const curIdx = current ? owned.indexOf(current) : -1;
-        if (owned.length) next = owned[(curIdx + 1) % (owned.length + 1)] || null;
-        setEquippedSlot(heroId, slot, next);
+      if (e.code === 'Escape') {
+        audioManager.play('menu_back', 'ui');
+        menuScreen = 'main';
+        startMenuTransition();
+        return;
+      }
+      if (e.code === 'ArrowLeft') {
+        menuSelectedIndex = (menuSelectedIndex - 1 + enemyIds.length) % enemyIds.length;
+        enemyTransitionAlpha = 0;
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'ArrowRight') {
+        menuSelectedIndex = (menuSelectedIndex + 1) % enemyIds.length;
+        enemyTransitionAlpha = 0;
+        audioManager.play('menu_hover', 'ui');
         return;
       }
       return;
     }
-    if (e.code === 'ArrowUp') { menuSelectedIndex = (menuSelectedIndex - 1 + MENU_OPTIONS_MAIN.length) % MENU_OPTIONS_MAIN.length; return; }
-    if (e.code === 'ArrowDown') { menuSelectedIndex = (menuSelectedIndex + 1) % MENU_OPTIONS_MAIN.length; return; }
-    if (e.code === 'Enter') {
-      const opt = MENU_OPTIONS_MAIN[menuSelectedIndex];
-      if (opt.id === 'start') {
-        const heroId = getSelectedHeroId();
-        if (!isHeroUnlocked(heroId)) return;
-        startNewRun();
-        gameState = 'COUNTDOWN';
-        countdownStartTime = performance.now();
+    if (menuScreen === 'loadout') {
+      if (e.code === 'Escape') {
+        audioManager.play('menu_back', 'ui');
+        menuScreen = 'main';
+        startMenuTransition();
+        return;
       }
-      if (opt.id === 'heroes') { menuScreen = 'heroes'; menuSelectedIndex = 0; heroSelectionLerp = 0; menuTransitionAlpha = 0; }
-      if (opt.id === 'loadout') { menuScreen = 'loadout'; menuSelectedIndex = 0; menuTransitionAlpha = 0; }
-      if (opt.id === 'enemies') { menuScreen = 'enemies'; menuSelectedIndex = 0; enemySelectionLerp = 0; enemyTransitionAlpha = 1; menuTransitionAlpha = 0; }
-      if (opt.id === 'help') { menuScreen = 'help'; menuTransitionAlpha = 0; }
+      if (e.code === 'ArrowUp') {
+        menuSelectedIndex = moveLoadoutSelection(menuSelectedIndex, 'up');
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'ArrowDown') {
+        menuSelectedIndex = moveLoadoutSelection(menuSelectedIndex, 'down');
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'ArrowLeft') {
+        menuSelectedIndex = moveLoadoutSelection(menuSelectedIndex, 'left');
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'ArrowRight') {
+        menuSelectedIndex = moveLoadoutSelection(menuSelectedIndex, 'right');
+        audioManager.play('menu_hover', 'ui');
+        return;
+      }
+      if (e.code === 'Enter') {
+        audioManager.play('menu_select', 'ui');
+        triggerMenuClickFlash();
+        handleLoadoutSelect(menuSelectedIndex);
+        return;
+      }
+      return;
+    }
+    if (e.code === 'ArrowUp') {
+      menuSelectedIndex = (menuSelectedIndex - 1 + MENU_OPTIONS_MAIN.length) % MENU_OPTIONS_MAIN.length;
+      audioManager.play('menu_hover', 'ui');
+      return;
+    }
+    if (e.code === 'ArrowDown') {
+      menuSelectedIndex = (menuSelectedIndex + 1) % MENU_OPTIONS_MAIN.length;
+      audioManager.play('menu_hover', 'ui');
+      return;
+    }
+    if (e.code === 'Enter') {
+      audioManager.play('menu_select', 'ui');
+      triggerMenuClickFlash();
+      handleMainMenuSelect(menuSelectedIndex);
       return;
     }
     return;
@@ -153,8 +267,7 @@ function onKeyDown(e) {
     if (e.code === 'ArrowUp') { deadSelectedIndex = deadSelectedIndex === 0 ? 1 : 0; return; }
     if (e.code === 'ArrowDown') { deadSelectedIndex = deadSelectedIndex === 0 ? 1 : 0; return; }
     if (e.code === 'Enter') {
-      if (deadSelectedIndex === 0) { startNewRun(); gameState = 'COUNTDOWN'; countdownStartTime = performance.now(); } // State switch: DEAD → COUNTDOWN (Retry)
-      else { gameState = 'MENU'; menuScreen = 'main'; menuSelectedIndex = 0; } // State switch: DEAD → MENU
+      handleDeathSelect(deadSelectedIndex);
       return;
     }
     return;
@@ -166,6 +279,7 @@ function onKeyDown(e) {
   if (healingChoices) {
     if (e.code === 'Digit1' && healingChoices.choices[0]) {
       healingChoices.choices[0].apply();
+      audioManager.play('upgrade_success', 'ui');
       upgradeFeedback = { text: healingChoices.choices[0].feedbackText, until: performance.now() + 1500 };
       healingChoices = null;
       upgradeChoices = { choices: pickRandomUpgrades(2) }; // Still grant room upgrade after healing choice.
@@ -173,6 +287,7 @@ function onKeyDown(e) {
     }
     if (e.code === 'Digit2' && healingChoices.choices[1]) {
       healingChoices.choices[1].apply();
+      audioManager.play('upgrade_success', 'ui');
       upgradeFeedback = { text: healingChoices.choices[1].feedbackText, until: performance.now() + 1500 };
       healingChoices = null;
       upgradeChoices = { choices: pickRandomUpgrades(2) };
@@ -180,6 +295,7 @@ function onKeyDown(e) {
     }
     if (e.code === 'Digit3' && healingChoices.choices[2]) {
       healingChoices.choices[2].apply();
+      audioManager.play('upgrade_success', 'ui');
       upgradeFeedback = { text: healingChoices.choices[2].feedbackText, until: performance.now() + 1500 };
       healingChoices = null;
       upgradeChoices = { choices: pickRandomUpgrades(2) };
@@ -190,18 +306,21 @@ function onKeyDown(e) {
   if (shrineChoices) {
     if (e.code === 'Digit1' && shrineChoices.choices[0]) {
       shrineChoices.choices[0].apply();
+      audioManager.play('shrine_accept', 'sfx');
       upgradeFeedback = { text: shrineChoices.choices[0].feedbackText, until: performance.now() + 1500 };
       shrineChoices = null;
       return;
     }
     if (e.code === 'Digit2' && shrineChoices.choices[1]) {
       shrineChoices.choices[1].apply();
+      audioManager.play('shrine_accept', 'sfx');
       upgradeFeedback = { text: shrineChoices.choices[1].feedbackText, until: performance.now() + 1500 };
       shrineChoices = null;
       return;
     }
     if (e.code === 'Digit3' && shrineChoices.choices[2]) {
       shrineChoices.choices[2].apply();
+      audioManager.play('shrine_accept', 'sfx');
       upgradeFeedback = { text: shrineChoices.choices[2].feedbackText, until: performance.now() + 1500 };
       shrineChoices = null;
       return;
@@ -209,33 +328,68 @@ function onKeyDown(e) {
     return;
   }
   if (upgradeChoices) {
-    if (e.code === 'Digit1') {
-      const choice = upgradeChoices.choices[0];
-      choice.apply();
-      upgradeFeedback = { text: choice.feedbackText, until: performance.now() + 1500 };
-      upgradeChoices = null;
-      return;
-    }
-    if (e.code === 'Digit2') {
-      const choice = upgradeChoices.choices[1];
-      choice.apply();
-      upgradeFeedback = { text: choice.feedbackText, until: performance.now() + 1500 };
-      upgradeChoices = null;
-      return;
-    }
-    // Ignore other keys while choosing
     return;
   }
   if (gameState !== 'PLAYING' && gameState !== 'COUNTDOWN') return;
+  if (isPaused) return;
   keys.add(e.code);
 }
 
 function onKeyUp(e) {
+  if (inputMode === 'modal' && settingsOpen) return;
   keys.delete(e.code);
 }
 
 document.addEventListener('keydown', onKeyDown);
 document.addEventListener('keyup', onKeyUp);
+canvas.addEventListener('mousemove', (e) => {
+  const coords = getCanvasCoords(e);
+  mx = coords.x;
+  my = coords.y;
+  if (settingsOpen) {
+    canvas.style.cursor = 'default';
+    return;
+  }
+  let hovered = false;
+  for (const a of uiHitAreas) {
+    if (mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h) {
+      hovered = true;
+      if (a.focus != null) setUiFocus(a);
+      break;
+    }
+  }
+  canvas.style.cursor = hovered ? 'pointer' : 'default';
+  if (inputMode === 'upgrade') {
+    topRightControls.hover = null;
+    return;
+  }
+  if (!settingsOpen || !settingsDrag || !settingsLayout) {
+    const dx = mx - muteButton.x;
+    const dy = my - muteButton.y;
+    const sx = mx - settingsButton.x;
+    const sy = my - settingsButton.y;
+    if (dx * dx + dy * dy <= muteButton.r * muteButton.r) {
+      topRightControls.hover = 'mute';
+    } else if (sx * sx + sy * sy <= settingsButton.r * settingsButton.r) {
+      topRightControls.hover = 'settings';
+    } else {
+      topRightControls.hover = null;
+    }
+    return;
+  }
+  const r = settingsLayout.sliders[settingsDrag];
+  const val = Math.max(0, Math.min(1, (mx - r.x) / r.w));
+  audioManager.setChannelVolume(settingsDrag, val);
+});
+canvas.addEventListener('mouseup', () => {
+  settingsDrag = null;
+});
+canvas.addEventListener('wheel', (e) => {
+  if (!settingsOpen || !settingsLayout || settingsLayout.scrollMax <= 0) return;
+  e.preventDefault();
+  settingsScrollY += e.deltaY;
+  settingsScrollY = Math.max(0, Math.min(settingsScrollY, settingsLayout.scrollMax));
+}, { passive: false });
 
 /** HUD: space above room for health bar. Health bar renders outside inner room, between canvas top and room top. */
 const HUD_HEIGHT = 52;
@@ -321,6 +475,7 @@ let bulletsPerShot = 1;
 /** Upgrade choices shown after clearing a room. Null when not shown. */
 /** @type {{ choices: { label: string, apply: () => void }[] } | null} */
 let upgradeChoices = null;
+let upgradeSelectedIndex = 0;
 
 /** Demon Shrine: deal choices. Null when not shown. Each deal has positive + negative effects. */
 /** @type {{ choices: { label: string, feedbackText: string, apply: () => void }[] } | null} */
@@ -368,7 +523,7 @@ const MENU_OPTIONS_MAIN = [
 const UI = {
   bg: '#0a0e18',
   navy: '#0d1220',
-  panelGlass: 'rgba(12,20,36,0.72)',
+  panelGlass: 'rgba(12,20,36,0.8)',
   panelBorder: 'rgba(80,120,180,0.18)',
   accent: '#5b8def',
   accentDim: 'rgba(91,141,239,0.35)',
@@ -406,9 +561,501 @@ const UI = {
   mainPanelWidthRatio: 0.8,
   mainPanelPad: 32,
   mainPanelGap: 18,
+  /** Unified corner radii. */
+  radiusButton: 10,
+  radiusPanel: 14,
+  radiusModal: 18,
+  radiusSlot: 8,
 };
 /** Menu transition: fades in on screen change. */
+const MENU_TRANSITION_MS = 200;
 let menuTransitionAlpha = 1;
+let menuTransitionStart = performance.now() - MENU_TRANSITION_MS;
+const MENU_CLICK_FLASH_MS = 120;
+let menuClickFlashUntil = 0;
+
+const audioManager = window.audioManager || {
+  play() {},
+  playLoop() {},
+  stop() {},
+  setVolume() {},
+  setChannelVolume() {},
+  toggleMute() {},
+  muted: { master: false, music: false, sfx: false, ui: false },
+};
+let ambientMode = null;
+let ambientStarted = false;
+let lowHpWarningActive = false;
+const muteButton = { x: 0, y: 0, r: 14 };
+let isPaused = false;
+let pauseSelectedIndex = 0;
+const settingsButton = { x: 0, y: 0, r: 14 };
+let settingsOpen = false;
+let settingsDrag = null;
+let settingsLayout = null;
+let settingsOpenAt = 0;
+let settingsScrollY = 0;
+let inputMode = 'game';
+let inputModePrev = 'game';
+let uiHitAreas = [];
+const topRightControls = {
+  padding: 16,
+  size: 40,
+  gap: 10,
+  hover: null,
+};
+
+function setPaused(state) {
+  if (inputMode === 'upgrade') return;
+  if (isPaused === state) return;
+  isPaused = state;
+  pauseSelectedIndex = 0;
+  audioManager.setChannelVolume('music', isPaused ? 0.125 : 0.25, { persist: false });
+  if (isPaused) {
+    inputMode = 'modal';
+  } else if (inputMode !== 'modal' && inputMode !== 'death') {
+    inputMode = gameState === 'MENU' ? 'menu' : 'game';
+  }
+}
+
+function layoutTopRightControls(cw, yOffset = 0) {
+  const size = topRightControls.size;
+  const pad = topRightControls.padding;
+  const gap = topRightControls.gap;
+  const totalW = size * 2 + gap;
+  const left = cw - pad - totalW;
+  const top = pad + yOffset;
+  muteButton.x = left + size / 2;
+  muteButton.y = top + size / 2;
+  muteButton.r = size / 2;
+  settingsButton.x = left + size + gap + size / 2;
+  settingsButton.y = top + size / 2;
+  settingsButton.r = size / 2;
+}
+
+function drawIconButton(ctx, cx, cy, r, icon, hovered) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(12,20,36,0.8)';
+  if (hovered) {
+    ctx.shadowColor = 'rgba(91,141,239,0.45)';
+    ctx.shadowBlur = 10;
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = UI.panelBorder;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = UI.title;
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(icon, cx, cy);
+  ctx.restore();
+}
+
+function drawTopRightControls(ctx, cw, yOffset = 0) {
+  layoutTopRightControls(cw, yOffset);
+  drawIconButton(ctx, muteButton.x, muteButton.y, muteButton.r, audioManager.muted.master ? '🔇' : '🔊', topRightControls.hover === 'mute');
+  drawIconButton(ctx, settingsButton.x, settingsButton.y, settingsButton.r, '⚙', topRightControls.hover === 'settings');
+}
+
+function registerTopRightHitAreas() {
+  uiHitAreas.push({
+    x: muteButton.x - muteButton.r,
+    y: muteButton.y - muteButton.r,
+    w: muteButton.r * 2,
+    h: muteButton.r * 2,
+    onClick: () => {
+      audioManager.toggleMute();
+      if (!audioManager.muted.master) {
+        audioManager.play('menu_select', 'ui');
+        setAmbient(gameState === 'MENU' ? 'menu' : 'gameplay');
+      }
+    },
+  });
+  uiHitAreas.push({
+    x: settingsButton.x - settingsButton.r,
+    y: settingsButton.y - settingsButton.r,
+    w: settingsButton.r * 2,
+    h: settingsButton.r * 2,
+    onClick: () => {
+      openSettingsModal();
+    },
+  });
+}
+
+function openSettingsModal() {
+  if (inputMode === 'upgrade') return;
+  settingsOpen = true;
+  settingsOpenAt = performance.now();
+  settingsDrag = null;
+  settingsScrollY = 0;
+  inputModePrev = inputMode;
+  inputMode = 'modal';
+}
+
+function closeSettingsModal() {
+  settingsOpen = false;
+  settingsDrag = null;
+  inputMode = inputModePrev || (gameState === 'MENU' ? 'menu' : 'game');
+}
+
+function handleMainMenuSelect(index) {
+  const opt = MENU_OPTIONS_MAIN[index];
+  if (!opt) return;
+  if (opt.id === 'start') {
+    const heroId = getSelectedHeroId();
+    if (!isHeroUnlocked(heroId)) return;
+    startNewRun();
+    gameState = 'COUNTDOWN';
+    countdownStartTime = performance.now();
+  }
+  if (opt.id === 'heroes') { menuScreen = 'heroes'; menuSelectedIndex = 0; heroSelectionLerp = 0; startMenuTransition(); }
+  if (opt.id === 'loadout') { menuScreen = 'loadout'; menuSelectedIndex = 0; startMenuTransition(); }
+  if (opt.id === 'enemies') { menuScreen = 'enemies'; menuSelectedIndex = 0; enemySelectionLerp = 0; enemyTransitionAlpha = 1; startMenuTransition(); }
+  if (opt.id === 'help') { menuScreen = 'help'; startMenuTransition(); }
+}
+
+function handlePauseSelect(index) {
+  if (index === 0) {
+    setPaused(false);
+  } else if (index === 1) {
+    openSettingsModal();
+  } else {
+    setPaused(false);
+    gameState = 'MENU';
+    menuScreen = 'main';
+    menuSelectedIndex = 0;
+    startMenuTransition();
+  }
+}
+
+function handleDeathSelect(index) {
+  if (index === 0) {
+    startNewRun();
+    gameState = 'COUNTDOWN';
+    countdownStartTime = performance.now();
+    inputMode = 'game';
+  } else {
+    gameState = 'MENU';
+    menuScreen = 'main';
+    menuSelectedIndex = 0;
+    inputMode = 'menu';
+  }
+}
+
+function handleUpgradeSelect(index) {
+  if (!upgradeChoices) return;
+  const choice = upgradeChoices.choices[index];
+  if (!choice) {
+    audioManager.play('menu_error', 'ui');
+    return;
+  }
+  choice.apply();
+  audioManager.play('upgrade_success', 'ui');
+  upgradeFeedback = { text: choice.feedbackText, until: performance.now() + 1500 };
+  upgradeChoices = null;
+  upgradeSelectedIndex = 0;
+  inputMode = 'game';
+}
+
+function enterDeathState() {
+  gameState = 'DEAD';
+  deadSelectedIndex = 0;
+  inputMode = 'death';
+}
+
+function handleHeroesSelect(index) {
+  const heroIds = getAllHeroIds();
+  const heroId = heroIds[index];
+  const progress = heroId ? getHeroProgress(heroId) : null;
+  if (!progress) return;
+  if (!progress.unlocked) {
+    unlockHero(heroId);
+    audioManager.play('hero_unlock', 'ui');
+    return;
+  }
+  upgradeHero(heroId);
+  audioManager.play('upgrade_success', 'ui');
+}
+
+function setUiFocus(area) {
+  if (!area || area.focus == null) return;
+  if (area.focus === 'main') menuSelectedIndex = area.index;
+  if (area.focus === 'loadout') menuSelectedIndex = area.index;
+  if (area.focus === 'heroes') menuSelectedIndex = area.index;
+  if (area.focus === 'enemies') menuSelectedIndex = area.index;
+  if (area.focus === 'pause') pauseSelectedIndex = area.index;
+  if (area.focus === 'upgrade') upgradeSelectedIndex = area.index;
+}
+
+function drawToggle(ctx, x, y, label, value) {
+  const w = 44;
+  const h = 20;
+  ctx.fillStyle = UI.body;
+  ctx.font = UI.fontHint + 'px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y + h / 2);
+  const tx = x + 160;
+  ctx.fillStyle = value ? 'rgba(91,141,239,0.7)' : 'rgba(30,40,55,0.7)';
+  roundRect(ctx, tx, y, w, h, UI.radiusSlot);
+  ctx.fill();
+  ctx.strokeStyle = UI.panelBorder;
+  roundRect(ctx, tx, y, w, h, UI.radiusSlot);
+  ctx.stroke();
+  ctx.fillStyle = value ? UI.title : UI.hint;
+  ctx.beginPath();
+  ctx.arc(tx + (value ? w - 10 : 10), y + h / 2, 7, 0, Math.PI * 2);
+  ctx.fill();
+  return { x: tx, y, w, h };
+}
+
+function drawSlider(ctx, x, y, w, value, label) {
+  const h = 6;
+  ctx.fillStyle = UI.body;
+  ctx.font = UI.fontHint + 'px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, y - 10);
+  ctx.fillStyle = UI.hint;
+  ctx.textAlign = 'right';
+  ctx.fillText(Math.round(value * 100) + '%', x + w, y - 10);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, x, y, w, h, UI.radiusSlot);
+  ctx.fill();
+  ctx.fillStyle = UI.accent;
+  roundRect(ctx, x, y, w * value, h, UI.radiusSlot);
+  ctx.fill();
+  ctx.strokeStyle = UI.panelBorder;
+  roundRect(ctx, x, y, w, h, UI.radiusSlot);
+  ctx.stroke();
+  ctx.fillStyle = UI.title;
+  ctx.beginPath();
+  ctx.arc(x + w * value, y + h / 2, 6, 0, Math.PI * 2);
+  ctx.fill();
+  return { x, y: y - 6, w, h: h + 12 };
+}
+
+function drawSettingsPanel(ctx, cw, ch) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, cw, ch);
+  const t = Math.min(1, (performance.now() - settingsOpenAt) / 140);
+  const ease = t * (2 - t);
+  const panelW = 420;
+  const paddingTop = 70;
+  const paddingBottom = 32;
+  const paddingX = 40;
+  const sliderGap = 56;
+  const toggleGap = 38;
+  const dividerGap = 52;
+  const titleHeight = 32;
+  const sliderBlock = 4 * sliderGap;
+  const muteBlock = 4 * toggleGap + 24;
+  const contentHeight = paddingTop + titleHeight + sliderBlock + dividerGap + muteBlock + paddingBottom;
+  const panelH = Math.min(contentHeight, ch - 80);
+  const px = cw / 2 - panelW / 2;
+  const py = ch / 2 - panelH / 2;
+  ctx.globalAlpha = ease;
+  ctx.translate(cw / 2, ch / 2);
+  ctx.scale(0.985 + 0.015 * ease, 0.985 + 0.015 * ease);
+  ctx.translate(-cw / 2, -ch / 2);
+  drawGlassPanel(px, py, panelW, panelH, null, UI.radiusModal);
+  ctx.strokeStyle = UI.accentDim;
+  roundRect(ctx, px + 1, py + 1, panelW - 2, panelH - 2, UI.radiusModal - 2);
+  ctx.stroke();
+  ctx.save();
+  roundRect(ctx, px, py, panelW, panelH, UI.radiusModal);
+  ctx.clip();
+  ctx.fillStyle = UI.title;
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Audio Settings', cw / 2, py + 32);
+
+  const sx = px + paddingX;
+  const sliderW = panelW - paddingX * 2;
+  const scrollMax = Math.max(0, contentHeight - panelH);
+  settingsScrollY = Math.max(0, Math.min(settingsScrollY, scrollMax));
+  const contentTop = py + paddingTop - settingsScrollY;
+  let y = contentTop;
+  const sliders = {};
+  sliders.master = drawSlider(ctx, sx, y, sliderW, audioManager.volumes.master, 'Master Volume');
+  y += sliderGap;
+  sliders.music = drawSlider(ctx, sx, y, sliderW, audioManager.volumes.music, 'Music Volume');
+  y += sliderGap;
+  sliders.sfx = drawSlider(ctx, sx, y, sliderW, audioManager.volumes.sfx, 'SFX Volume');
+  y += sliderGap;
+  sliders.ui = drawSlider(ctx, sx, y, sliderW, audioManager.volumes.ui, 'UI Volume');
+
+  y += dividerGap;
+  ctx.strokeStyle = 'rgba(91,141,239,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sx, y);
+  ctx.lineTo(sx + sliderW, y);
+  ctx.stroke();
+  y += 18;
+  ctx.fillStyle = UI.hint;
+  ctx.font = UI.fontHint + 'px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Mute Toggles', sx, y);
+  y += 22;
+  const toggles = {};
+  toggles.master = drawToggle(ctx, sx, y, 'Mute All', audioManager.muted.master);
+  y += toggleGap;
+  toggles.music = drawToggle(ctx, sx, y, 'Mute Music', audioManager.isMusicMuted);
+  y += toggleGap;
+  toggles.sfx = drawToggle(ctx, sx, y, 'Mute SFX', audioManager.muted.sfx);
+  y += toggleGap;
+  toggles.ui = drawToggle(ctx, sx, y, 'Mute UI', audioManager.muted.ui);
+
+  ctx.restore();
+  ctx.restore();
+  settingsLayout = { panel: { x: px, y: py, w: panelW, h: panelH }, sliders, toggles, scrollMax };
+  if (settingsOpen) {
+    uiHitAreas.length = 0;
+    Object.entries(sliders).forEach(([key, r]) => {
+      uiHitAreas.push({
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+        onClick: () => {
+          settingsDrag = key;
+        },
+      });
+    });
+    Object.entries(toggles).forEach(([key, r]) => {
+      uiHitAreas.push({
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+        onClick: () => {
+          if (key === 'music') {
+            const next = !audioManager.isMusicMuted;
+            audioManager.setMute(next, 'music');
+            if (!next) restartAmbientMusic();
+          } else {
+            audioManager.setMute(!audioManager.muted[key], key);
+          }
+        },
+      });
+    });
+  }
+}
+
+function getLoadoutNavMap() {
+  const slotIndexById = Object.fromEntries(EQUIPMENT_SLOTS.map((s, i) => [s, i]));
+  const items = [
+    { key: 'hero', row: 0, col: 0, index: 0 },
+    { key: 'weaponCore', row: 1, col: 0, index: 1 + slotIndexById.weaponCore },
+    { key: 'relic', row: 1, col: 1, index: 1 + slotIndexById.relic },
+    { key: 'armor', row: 2, col: 0, index: 1 + slotIndexById.armor },
+    { key: 'boots', row: 2, col: 1, index: 1 + slotIndexById.boots },
+    { key: 'catalyst', row: 3, col: 0, index: 1 + slotIndexById.catalyst },
+    { key: 'charm', row: 3, col: 1, index: 1 + slotIndexById.charm },
+    { key: 'sigil', row: 3, col: 2, index: 1 + slotIndexById.sigil },
+    { key: 'artifact', row: 3, col: 3, index: 1 + slotIndexById.artifact },
+    { key: 'back', row: 4, col: 0, index: 1 + EQUIPMENT_SLOTS.length },
+  ];
+  const byIndex = {};
+  items.forEach((it) => { byIndex[it.index] = it; });
+  return { items, byIndex };
+}
+
+function moveLoadoutSelection(current, dir) {
+  const nav = getLoadoutNavMap();
+  const cur = nav.byIndex[current] || nav.items[0];
+  let targetRow = cur.row;
+  let targetCol = cur.col;
+  if (dir === 'up') targetRow -= 1;
+  if (dir === 'down') targetRow += 1;
+  if (dir === 'left') targetCol -= 1;
+  if (dir === 'right') targetCol += 1;
+
+  const sameRow = nav.items.filter((it) => it.row === targetRow);
+  if (!sameRow.length) return current;
+  let best = sameRow[0];
+  let bestDist = Math.abs(best.col - targetCol);
+  sameRow.forEach((it) => {
+    const d = Math.abs(it.col - targetCol);
+    if (d < bestDist) {
+      best = it;
+      bestDist = d;
+    }
+  });
+  return best.index;
+}
+
+function handleLoadoutSelect(selectedIndex) {
+  const heroIds = getAllHeroIds().filter((id) => isHeroUnlocked(id));
+  const slotCount = EQUIPMENT_SLOTS.length;
+  const totalRows = 1 + slotCount + 1;
+  if (selectedIndex === 0) {
+    if (!heroIds.length) return;
+    const idx = heroIds.indexOf(getSelectedHeroId());
+    const next = heroIds[(idx + 1) % heroIds.length];
+    setSelectedHeroId(next);
+    audioManager.play('hero_select', 'ui');
+    return;
+  }
+  if (selectedIndex === totalRows - 1) {
+    menuScreen = 'main';
+    startMenuTransition();
+    return;
+  }
+  const heroId = getSelectedHeroId();
+  const slotIndex = selectedIndex - 1;
+  const slot = EQUIPMENT_SLOTS[slotIndex];
+  const owned = getOwnedGearIds().filter((id) => GEAR_CATALOG[id] && GEAR_CATALOG[id].slot === slot);
+  const current = getEquippedGear(heroId)[slot];
+  let next = null;
+  const curIdx = current ? owned.indexOf(current) : -1;
+  if (owned.length) next = owned[(curIdx + 1) % (owned.length + 1)] || null;
+  if (next && next !== current) audioManager.play('equip_item', 'ui');
+  if (!next && current) audioManager.play('unequip_item', 'ui');
+  setEquippedSlot(heroId, slot, next);
+}
+
+function startMenuTransition() {
+  menuTransitionStart = performance.now();
+  menuTransitionAlpha = 0;
+}
+
+function triggerMenuClickFlash() {
+  menuClickFlashUntil = performance.now() + MENU_CLICK_FLASH_MS;
+}
+
+function setAmbient(mode) {
+  if (ambientMode !== mode) {
+    if (ambientMode === 'menu') audioManager.fadeOutLoop('menu_ambient_loop', 500);
+    if (ambientMode === 'gameplay') audioManager.fadeOutLoop('gameplay_ambient_loop', 500);
+    ambientMode = mode;
+    ambientStarted = false;
+  }
+  const canPlay = typeof audioManager.unlocked === 'boolean' ? audioManager.unlocked : true;
+  if (!ambientMode || !canPlay || audioManager.muted.master) {
+    ambientStarted = false;
+    return;
+  }
+  if (ambientStarted) return;
+  if (ambientMode === 'menu') audioManager.fadeInLoop('menu_ambient_loop', 'music', 500);
+  if (ambientMode === 'gameplay') audioManager.fadeInLoop('gameplay_ambient_loop', 'music', 500);
+  ambientStarted = true;
+}
+
+function restartAmbientMusic() {
+  audioManager.fadeOutLoop('menu_ambient_loop', 200);
+  audioManager.fadeOutLoop('gameplay_ambient_loop', 200);
+  ambientStarted = false;
+  if (gameState === 'MENU') audioManager.fadeInLoop('menu_ambient_loop', 'music', 500);
+  if (gameState === 'PLAYING') audioManager.fadeInLoop('gameplay_ambient_loop', 'music', 500);
+}
 const MENU_STARS = [];
 for (let i = 0; i < 48; i++) {
   MENU_STARS.push({
@@ -417,16 +1064,23 @@ for (let i = 0; i < 48; i++) {
   });
 }
 function drawMenuBackground(cw, ch) {
-  const grad = ctx.createRadialGradient(cw / 2, ch / 2, 0, cw / 2, ch / 2, Math.max(cw, ch) * 0.8);
-  grad.addColorStop(0, '#0e1525');
-  grad.addColorStop(0.4, '#0a0e1a');
+  const cx = cw / 2;
+  const cy = ch * 0.45;
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(cw, ch) * 0.85);
+  grad.addColorStop(0, '#121a2f');
   grad.addColorStop(1, '#050810');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, cw, ch);
-  const t = performance.now() * 0.0008;
+  const ambient = ctx.createLinearGradient(0, 0, 0, ch);
+  ambient.addColorStop(0, 'rgba(255,255,255,0.06)');
+  ambient.addColorStop(0.6, 'rgba(0,0,0,0)');
+  ambient.addColorStop(1, 'rgba(0,0,0,0.18)');
+  ctx.fillStyle = ambient;
+  ctx.fillRect(0, 0, cw, ch);
+  const t = performance.now() * 0.0007;
   MENU_STARS.forEach((s) => {
-    const alpha = 0.15 + 0.12 * Math.sin(t + s.twinkle);
-    ctx.fillStyle = `rgba(180,200,255,${alpha})`;
+    const flicker = 0.05 + 0.08 * (0.5 + 0.5 * Math.sin(t + s.twinkle));
+    ctx.fillStyle = `rgba(255,255,255,${flicker})`;
     ctx.beginPath();
     ctx.arc(s.x * cw, s.y * ch, s.r, 0, Math.PI * 2);
     ctx.fill();
@@ -434,31 +1088,65 @@ function drawMenuBackground(cw, ch) {
   ctx.strokeStyle = 'rgba(60,100,160,0.06)';
   ctx.lineWidth = 1;
   const gridStep = 40;
-  for (let gx = 0; gx <= cw; gx += gridStep) {
+  const driftX = (t * 12) % gridStep;
+  const driftY = (t * 8) % gridStep;
+  for (let gx = -gridStep; gx <= cw + gridStep; gx += gridStep) {
     ctx.beginPath();
-    ctx.moveTo(gx, 0);
-    ctx.lineTo(gx, ch);
+    ctx.moveTo(gx + driftX, 0);
+    ctx.lineTo(gx + driftX, ch);
     ctx.stroke();
   }
-  for (let gy = 0; gy <= ch; gy += gridStep) {
+  for (let gy = -gridStep; gy <= ch + gridStep; gy += gridStep) {
     ctx.beginPath();
-    ctx.moveTo(0, gy);
-    ctx.lineTo(cw, gy);
+    ctx.moveTo(0, gy + driftY);
+    ctx.lineTo(cw, gy + driftY);
     ctx.stroke();
   }
+
+  const vignette = ctx.createRadialGradient(cx, cy, Math.min(cw, ch) * 0.15, cx, cy, Math.max(cw, ch) * 0.9);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(0.65, 'rgba(0,0,0,0.2)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, cw, ch);
 }
 function drawGlassButton(x, y, w, h, selected) {
+  const now = performance.now();
+  const pulse = selected ? 0.35 + 0.35 * Math.sin((now / 1200) * Math.PI * 2) : 0;
+  const radius = UI.radiusButton;
+  ctx.save();
+  if (selected) {
+    ctx.shadowColor = 'rgba(100,150,255,0.6)';
+    ctx.shadowBlur = 15;
+  }
   ctx.fillStyle = UI.panelGlass;
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = selected ? UI.accent : UI.panelBorder;
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.fill();
+  if (!selected) {
+    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    roundRect(ctx, x, y, w, h, radius);
+    ctx.fill();
+  }
+  if (selected && now < menuClickFlashUntil) {
+    const flash = (menuClickFlashUntil - now) / MENU_CLICK_FLASH_MS;
+    ctx.fillStyle = `rgba(255,255,255,${0.2 * flash})`;
+    roundRect(ctx, x, y, w, h, radius);
+    ctx.fill();
+  }
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = selected ? `rgba(91,141,239,${pulse})` : UI.panelBorder;
   ctx.lineWidth = selected ? 1.5 : 1;
-  ctx.strokeRect(x, y, w, h);
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.stroke();
   if (selected) {
     ctx.fillStyle = UI.accentDim;
-    ctx.fillRect(x, y, 3, h);
+    roundRectLeft(ctx, x, y, 3, h, radius);
+    ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,0.03)';
     ctx.fillRect(x + 1, y + 1, w - 2, 1);
   }
+  ctx.restore();
 }
 function drawPanel(x, y, w, h, highlighted = false) {
   drawGlassButton(x, y, w, h, highlighted);
@@ -518,13 +1206,64 @@ function drawMultilineText(ctx, text, x, y, options = {}) {
   return usedHeight;
 }
 
+function drawTrackingText(ctx, text, x, y, options = {}) {
+  const {
+    spacing = 1.5,
+    color = UI.title,
+    font = UI.fontScreenTitle + 'px sans-serif',
+    align = 'center',
+  } = options;
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'alphabetic';
+  const chars = String(text).split('');
+  const widths = chars.map((c) => ctx.measureText(c).width);
+  const total = widths.reduce((sum, w) => sum + w, 0) + spacing * Math.max(0, chars.length - 1);
+  let startX = x;
+  if (align === 'center') startX = x - total / 2;
+  else if (align === 'right') startX = x - total;
+  let cx = startX;
+  chars.forEach((c, i) => {
+    ctx.fillText(c, cx, y);
+    cx += widths[i] + spacing;
+  });
+  ctx.restore();
+  return total;
+}
+
+function drawHeaderUnderline(ctx, x, y, width) {
+  const pulse = 0.4 + 0.3 * Math.sin(performance.now() * (2 * Math.PI / 1200));
+  ctx.save();
+  ctx.strokeStyle = `rgba(91,141,239,${pulse})`;
+  ctx.shadowColor = `rgba(91,141,239,${pulse})`;
+  ctx.shadowBlur = 6;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x - width / 2, y + 10);
+  ctx.lineTo(x + width / 2, y + 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function getTitleYOffset() {
+  return -10 * (1 - menuTransitionAlpha);
+}
+
 /** Glass panel: minimal sci-fi. */
-function drawGlassPanel(x, y, w, h, accentColor = null) {
+function drawGlassPanel(x, y, w, h, accentColor = null, radius = UI.radiusPanel) {
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 20;
+  ctx.shadowOffsetY = 6;
   ctx.fillStyle = UI.panelGlass;
-  ctx.fillRect(x, y, w, h);
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.fill();
+  ctx.restore();
   ctx.strokeStyle = accentColor || UI.panelBorder;
   ctx.lineWidth = 1;
-  ctx.strokeRect(x, y, w, h);
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.03)';
   ctx.fillRect(x + 1, y + 1, w - 2, 1);
 }
@@ -550,15 +1289,15 @@ function drawHelpScreen(cw, ch) {
   const contentX = px + pad;
 
   // 2. Title (above panel)
-  ctx.fillStyle = UI.title;
-  ctx.font = `bold ${UI.fontModalTitle}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.fillText('HOW TO PLAY', cw / 2, py - 16);
-  ctx.fillStyle = UI.accent;
-  ctx.fillRect(cw / 2 - 70, py - 2, 140, 1);
+  const helpTitleW = drawTrackingText(ctx, 'HOW TO PLAY', cw / 2, py - 16 + getTitleYOffset(), {
+    spacing: 1.5,
+    font: `bold ${UI.fontModalTitle}px sans-serif`,
+    color: UI.title,
+  });
+  drawHeaderUnderline(ctx, cw / 2, py - 16 + getTitleYOffset(), helpTitleW);
 
   // 3. Panel
-  drawGlassPanel(px, py, panelW, panelH);
+  drawGlassPanel(px, py, panelW, panelH, null, UI.radiusModal);
 
   // 4. Help text (inside panel)
   const keycap = (key, x, y) => {
@@ -1222,6 +1961,7 @@ function transitionToRoom(fromRoomId, toRoomId) {
     target.hasSpawnedEnemies = true;
     if (target.isBossRoom) {
       target.boss = spawnBoss();
+      audioManager.play('boss_intro', 'sfx');
     } else {
       target.enemies = spawnEnemyWave(target.obstacles);
     }
@@ -1261,12 +2001,46 @@ function rotateDir(dx, dy, deg) {
  * Multishot: fires bulletsPerShot bullets with small angle spread.
  */
 function onCanvasClick(e) {
+  const coords = getCanvasCoords(e);
+  mx = coords.x;
+  my = coords.y;
+  if (settingsOpen && settingsLayout) {
+    const p = settingsLayout.panel;
+    if (!(mx >= p.x && mx <= p.x + p.w && my >= p.y && my <= p.y + p.h)) {
+      closeSettingsModal();
+      return;
+    }
+    for (const a of uiHitAreas) {
+      if (mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h) {
+        if (a.onClick) a.onClick();
+        return;
+      }
+    }
+    return;
+  }
+  for (const a of uiHitAreas) {
+    if (mx >= a.x && mx <= a.x + a.w && my >= a.y && my <= a.y + a.h) {
+      if (a.onClick) {
+        a.onClick();
+        return;
+      }
+      if (a.focus != null) setUiFocus(a);
+      if (a.action) {
+        audioManager.play('menu_select', 'ui');
+        triggerMenuClickFlash();
+        a.action();
+        return;
+      }
+    }
+  }
+  if (inputMode !== 'game') return;
+  if (isPaused) return;
   if (gameState !== 'PLAYING' || upgradeChoices || shrineChoices || healingChoices) return;
   const now = performance.now();
   if (now - lastShotTime < fireCooldownMs) return;
   lastShotTime = now;
+  audioManager.play('shoot', 'sfx');
 
-  const { x: mx, y: my } = getCanvasCoords(e);
   let dx = mx - player.x;
   let dy = my - player.y;
   const len = Math.hypot(dx, dy);
@@ -1293,8 +2067,8 @@ canvas.addEventListener('click', onCanvasClick);
 canvas.addEventListener('mousemove', (e) => {
   if (gameState !== 'MENU' || menuScreen !== 'heroes') return;
   const rect = canvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) / rect.width;
-  const my = (e.clientY - rect.top) / rect.height;
+  mx = (e.clientX - rect.left) / rect.width;
+  my = (e.clientY - rect.top) / rect.height;
   heroLobbyMouseX = mx * 2 - 1;
   heroLobbyMouseY = my * 2 - 1;
 });
@@ -1433,9 +2207,9 @@ function drawPlayScene() {
     ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
     if (isLocked || isBossLocked) {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      const mx = dr.x + dr.w / 2; const my = dr.y + dr.h / 2;
+      const midX = dr.x + dr.w / 2; const midY = dr.y + dr.h / 2;
       const bw = Math.max(4, Math.min(dr.w, dr.h) * 0.35);
-      ctx.fillRect(mx - bw / 2, my - 2, bw, 4);
+      ctx.fillRect(midX - bw / 2, midY - 2, bw, 4);
     }
   }
   // Frame: outer room border (blue stroke).
@@ -1535,10 +2309,25 @@ function drawPlayScene() {
  * Game loop: update and render. Branch on game state; MENU, COUNTDOWN, DEAD, VICTORY have dedicated handling.
  */
 function loop() {
+  setAmbient(gameState === 'MENU' ? 'menu' : 'gameplay');
+  if (settingsOpen) {
+    inputMode = 'modal';
+  } else if (gameState === 'DEAD') {
+    inputMode = 'death';
+  } else if (gameState === 'MENU') {
+    inputMode = 'menu';
+  } else if (isPaused) {
+    inputMode = 'modal';
+  } else if (upgradeChoices) {
+    inputMode = 'upgrade';
+  } else {
+    inputMode = 'game';
+  }
+  uiHitAreas.length = 0;
   if (gameState === 'MENU') {
     const cw = canvas.width;
     const ch = canvas.height;
-    menuTransitionAlpha += (1 - menuTransitionAlpha) * 0.15;
+    menuTransitionAlpha = Math.min(1, (performance.now() - menuTransitionStart) / MENU_TRANSITION_MS);
 
     if (menuScreen === 'help') {
       drawHelpScreen(cw, ch);
@@ -1570,7 +2359,7 @@ function loop() {
       const heroCenterX = heroAreaW / 2;
       const heroCenterY = ch * 0.38;
       const heroSize = Math.round(140 * 1.6);
-      const floatY = 2.5 * Math.sin(t * 1.4);
+      const floatY = 1.6 * Math.sin(t * 1.4);
       const breathScale = 1 + 0.01 * Math.sin(t * 2);
       const heroLeft = heroCenterX - (heroSize * breathScale) / 2;
       const heroTop = heroCenterY - (heroSize * breathScale) / 2 + floatY;
@@ -1585,6 +2374,20 @@ function loop() {
       ctx.beginPath();
       ctx.ellipse(heroCenterX, heroCenterYf + heroSize * 0.48, platformR * 0.9, platformR * 0.22, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+
+      // Faint energy ring behind selected hero (slow ~10s rotation)
+      ctx.save();
+      ctx.translate(heroCenterX, heroCenterYf);
+      ctx.rotate(t * 0.628);
+      ctx.translate(-heroCenterX, -heroCenterYf);
+      ctx.strokeStyle = 'rgba(120,220,255,0.08)';
+      ctx.shadowColor = 'rgba(120,220,255,0.12)';
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(heroCenterX, heroCenterYf, platformR * 1.18, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
 
       const radialGlow = ctx.createRadialGradient(heroCenterX, heroCenterYf, 0, heroCenterX, heroCenterYf, heroSize * 0.8);
@@ -1638,6 +2441,9 @@ function loop() {
           ctx.globalAlpha = 0.55;
           ctx.filter = 'grayscale(100%) saturate(0) brightness(0.65)';
         }
+        ctx.shadowColor = 'rgba(0,0,0,0.45)';
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetY = 10;
         ctx.drawImage(uiSprite, heroLeft, heroTop, heroSize * breathScale, heroSize * breathScale);
         ctx.restore();
       }
@@ -1687,12 +2493,16 @@ function loop() {
         ctx.fillStyle = UI.hint;
         ctx.font = UI.fontLabel + 'px sans-serif';
         ctx.fillText(s.label, statsX + pad, barY - 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
         ctx.fillRect(statsX + barPad, barY - 8, barW, 8);
+        ctx.save();
+        ctx.shadowColor = accent + '66';
+        ctx.shadowBlur = 8;
         ctx.fillStyle = accent;
         ctx.fillRect(statsX + barPad, barY - 8, barW * val, 8);
+        ctx.restore();
         if (val > 0.05) {
-          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillStyle = 'rgba(255,255,255,0.14)';
           ctx.fillRect(statsX + barPad, barY - 8, barW * val, 2);
         }
         barY += 24;
@@ -1704,10 +2514,12 @@ function loop() {
         const pStat = (passive.stat || '').replace(/([A-Z])/g, ' $1').trim();
         const cardY = barY + 14;
         ctx.fillStyle = 'rgba(20,35,55,0.7)';
-        ctx.fillRect(statsX + pad, cardY, statsPanelW - pad * 2, 48);
+        roundRect(ctx, statsX + pad, cardY, statsPanelW - pad * 2, 48, UI.radiusSlot);
+        ctx.fill();
         ctx.strokeStyle = accent + '50';
         ctx.lineWidth = 1;
-        ctx.strokeRect(statsX + pad, cardY, statsPanelW - pad * 2, 48);
+        roundRect(ctx, statsX + pad, cardY, statsPanelW - pad * 2, 48, UI.radiusSlot);
+        ctx.stroke();
         ctx.fillStyle = 'rgba(255,255,255,0.04)';
         ctx.fillRect(statsX + pad, cardY, statsPanelW - pad * 2, 1);
         ctx.fillStyle = accent;
@@ -1766,11 +2578,20 @@ function loop() {
           ctx.fillStyle = glowGrad;
           ctx.fillRect(x - 8, y - 8, w + 16, h + 16);
         }
+        if (isActive) {
+          const activeGlow = ctx.createRadialGradient(x + w / 2, y + h - 6, 0, x + w / 2, y + h - 6, w * 0.55);
+          activeGlow.addColorStop(0, cardAccent + '55');
+          activeGlow.addColorStop(0.5, cardAccent + '18');
+          activeGlow.addColorStop(1, 'transparent');
+          ctx.fillStyle = activeGlow;
+          ctx.fillRect(x - 6, y + h - 18, w + 12, 28);
+        }
         drawGlassPanel(x, y, w, h, isSelected ? accent : null);
         if (isSelected) {
           ctx.strokeStyle = accent;
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(x, y, w, h);
+          roundRect(ctx, x, y, w, h, UI.radiusPanel);
+          ctx.stroke();
         }
         const thumbSize = 62 * cardScale;
         const thumbLeft = x + (w - thumbSize) / 2;
@@ -1806,11 +2627,37 @@ function loop() {
         }
         ctx.textAlign = 'left';
       });
+      uiHitAreas.length = 0;
+      heroIds.forEach((id, i) => {
+        const lerpIdx = Math.abs(i - heroSelectionLerp);
+        const cardScale = 0.86 + 0.14 * Math.max(0, 1 - lerpIdx);
+        const isSelected = cardScale > 0.96;
+        const cardW = 108;
+        const cardH = 108;
+        const cardGap = 20;
+        const totalStripW = heroIds.length * cardW + (heroIds.length - 1) * cardGap;
+        const stripStartX = cw / 2 - totalStripW / 2;
+        const x = stripStartX + i * (cardW + cardGap);
+        const y = (ch - UI.carouselStripTopOffset) + (cardH - cardH * cardScale) / 2 - (isSelected ? 6 : 0);
+        const w = cardW * cardScale;
+        const h = cardH * cardScale;
+        uiHitAreas.push({
+          focus: 'heroes',
+          index: i,
+          x,
+          y,
+          w,
+          h,
+          action: () => handleHeroesSelect(i),
+        });
+      });
 
-      ctx.fillStyle = UI.title;
-      ctx.font = UI.fontScreenTitle + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('HEROES', cw / 2, UI.screenTitleY);
+      const heroesTitleW = drawTrackingText(ctx, 'HEROES', cw / 2, UI.screenTitleY + getTitleYOffset(), {
+        spacing: 1.5,
+        font: UI.fontScreenTitle + 'px sans-serif',
+        color: UI.title,
+      });
+      drawHeaderUnderline(ctx, cw / 2, UI.screenTitleY + getTitleYOffset(), heroesTitleW);
 
       ctx.fillStyle = UI.hint;
       ctx.font = UI.fontHint + 'px sans-serif';
@@ -1824,17 +2671,82 @@ function loop() {
       const equipped = getEquippedGear(heroId);
       ctx.globalAlpha = menuTransitionAlpha;
 
-      ctx.fillStyle = UI.title;
-      ctx.font = UI.fontScreenTitle + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('LOADOUT', cw / 2, UI.screenTitleY);
+      const loadoutTitleW = drawTrackingText(ctx, 'LOADOUT', cw / 2, UI.screenTitleY + getTitleYOffset(), {
+        spacing: 1.5,
+        font: UI.fontScreenTitle + 'px sans-serif',
+        color: UI.title,
+      });
+      drawHeaderUnderline(ctx, cw / 2, UI.screenTitleY + getTitleYOffset(), loadoutTitleW);
 
-      const heroHeaderW = Math.round(cw * UI.contentRatio);
+      const containerW = Math.round(cw * 0.84);
+      const containerX = (cw - containerW) / 2;
+      const containerTop = UI.screenTitleY + 64;
+      const containerBottom = ch - 32;
+      let sectionGap = 28;
+      let cursorY = containerTop;
+      uiHitAreas.length = 0;
+
+      const heroHeaderW = containerW;
       const heroHeaderH = 82;
-      const heroHeaderX = (cw - heroHeaderW) / 2;
-      const heroHeaderY = 52;
+      const heroHeaderX = containerX;
+      let heroHeaderY = cursorY;
+
+      const slots = [...EQUIPMENT_SLOTS];
+      const gearLeft = ['weaponCore', 'armor'];
+      const gearRight = ['relic', 'boots'];
+      const moduleSlots = ['catalyst', 'charm', 'sigil', 'artifact'];
+
+      const gearCardW = 300;
+      const gearCardH = 86;
+      let gearGapY = 22;
+      const colGap = 56;
+      const gearColsW = gearCardW * 2 + colGap;
+      const gearColsX = cw / 2 - gearColsW / 2;
+      const gearLeftX = gearColsX;
+      const gearRightX = gearColsX + gearCardW + colGap;
+      const moduleCardW = 140;
+      let moduleCardH = 70;
+      let moduleGap = 16;
+      const backH = 52;
+      const hintGap = 20;
+      const bottomPad = 40;
+
+      const computeLayout = () => {
+        const gearTop = heroHeaderY + heroHeaderH + sectionGap;
+        const gearLeftH = gearLeft.length * gearCardH + (gearLeft.length - 1) * gearGapY;
+        const gearRightH = gearRight.length * gearCardH + (gearRight.length - 1) * gearGapY;
+        const gearSectionH = Math.max(gearLeftH, gearRightH);
+        const moduleRowW = moduleSlots.length * moduleCardW + (moduleSlots.length - 1) * moduleGap;
+        const moduleX = cw / 2 - moduleRowW / 2;
+        const moduleY = gearTop + gearSectionH + sectionGap;
+        const backW = Math.round(moduleRowW * 0.9);
+        const backX = (cw - backW) / 2;
+        const backY = moduleY + moduleCardH + sectionGap;
+        const hintY = backY + backH + hintGap;
+        const layoutBottom = hintY + bottomPad;
+        return { gearTop, gearSectionH, moduleRowW, moduleX, moduleY, backW, backX, backY, hintY, layoutBottom };
+      };
+
+      let layout = computeLayout();
+      if (layout.layoutBottom > containerBottom) {
+        sectionGap = 20;
+        gearGapY = 16;
+        moduleCardH = 60;
+        moduleGap = 12;
+        layout = computeLayout();
+      }
+      if (layout.layoutBottom > containerBottom) {
+        const overflow = layout.layoutBottom - containerBottom;
+        const minGearTop = heroHeaderY + heroHeaderH + sectionGap;
+        const shift = Math.min(overflow, layout.gearTop - minGearTop);
+        layout.gearTop -= shift;
+        layout.moduleY -= shift;
+        layout.backY -= shift;
+        layout.hintY -= shift;
+      }
+
       const isHeaderSelected = menuSelectedIndex === 0;
-      drawGlassPanel(heroHeaderX, heroHeaderY, heroHeaderW, heroHeaderH);
+      drawGlassPanel(heroHeaderX, heroHeaderY, heroHeaderW, heroHeaderH, isHeaderSelected ? UI.accentDim : null, UI.radiusPanel);
       ctx.fillStyle = isHeaderSelected ? UI.accent : UI.panelBorder;
       ctx.fillRect(heroHeaderX, heroHeaderY, 3, heroHeaderH);
       const portraitSize = 60;
@@ -1870,25 +2782,40 @@ function loop() {
       if (isHeaderSelected) {
         ctx.strokeStyle = UI.accent;
         ctx.lineWidth = 1;
-        ctx.strokeRect(heroHeaderX, heroHeaderY, heroHeaderW, heroHeaderH);
+        roundRect(ctx, heroHeaderX, heroHeaderY, heroHeaderW, heroHeaderH, UI.radiusPanel);
+        ctx.stroke();
       }
+      uiHitAreas.push({
+        focus: 'loadout',
+        index: 0,
+        x: heroHeaderX,
+        y: heroHeaderY,
+        w: heroHeaderW,
+        h: heroHeaderH,
+        action: () => handleLoadoutSelect(0),
+      });
 
-      const slotCardW = 360;
-      const slotCardH = 78;
-      const cols = 2;
-      const slotGap = 24;
-      const slots = [...EQUIPMENT_SLOTS];
-      const gridW = cols * slotCardW + (cols - 1) * slotGap;
-      const gridX = (cw - gridW) / 2;
-      const gridY = 152;
+      const layoutMap = new Map();
+      gearLeft.forEach((slot, i) => {
+        layoutMap.set(slot, { x: gearLeftX, y: layout.gearTop + i * (gearCardH + gearGapY), w: gearCardW, h: gearCardH, dashed: false });
+      });
+      gearRight.forEach((slot, i) => {
+        layoutMap.set(slot, { x: gearRightX, y: layout.gearTop + i * (gearCardH + gearGapY), w: gearCardW, h: gearCardH, dashed: false });
+      });
+      moduleSlots.forEach((slot, i) => {
+        layoutMap.set(slot, { x: layout.moduleX + i * (moduleCardW + moduleGap), y: layout.moduleY, w: moduleCardW, h: moduleCardH, dashed: true });
+      });
+
       for (let i = 0; i < slots.length; i++) {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
+        const slot = slots[i];
+        const layout = layoutMap.get(slot);
+        if (!layout) continue;
         const isSelected = menuSelectedIndex === i + 1;
         const liftY = isSelected ? -3 : 0;
-        const x = gridX + col * (slotCardW + slotGap);
-        const y = gridY + row * (slotCardH + slotGap) + liftY;
-        const slot = slots[i];
+        const x = layout.x;
+        const y = layout.y + liftY;
+        const cardW = layout.w;
+        const cardH = layout.h;
         const gearId = equipped[slot];
         const gear = gearId ? GEAR_CATALOG[gearId] : null;
         const isEmpty = !gear;
@@ -1898,57 +2825,85 @@ function loop() {
 
         if (isEmpty) {
           ctx.fillStyle = 'rgba(12,20,36,0.5)';
-          ctx.fillRect(x, y, slotCardW, slotCardH);
-          ctx.setLineDash([6, 4]);
+          roundRect(ctx, x, y, cardW, cardH, UI.radiusSlot);
+          ctx.fill();
+          if (layout.dashed) ctx.setLineDash([6, 4]);
           ctx.strokeStyle = isSelected ? UI.accent : 'rgba(80,120,180,0.2)';
           ctx.lineWidth = isSelected ? 1.5 : 1;
-          ctx.strokeRect(x, y, slotCardW, slotCardH);
+          roundRect(ctx, x, y, cardW, cardH, UI.radiusSlot);
+          ctx.stroke();
           ctx.setLineDash([]);
+          if (isSelected) {
+            ctx.fillStyle = 'rgba(91,141,239,0.08)';
+            roundRect(ctx, x, y, cardW, cardH, UI.radiusSlot);
+            ctx.fill();
+          }
           ctx.fillStyle = UI.hint;
           ctx.font = '24px sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText('+', x + slotCardW / 2, y + slotCardH / 2 - 5);
+          ctx.fillText('+', x + cardW / 2, y + cardH / 2 - 5);
           ctx.fillStyle = UI.locked;
           ctx.font = UI.fontHint + 'px sans-serif';
-          ctx.fillText('Install Module', x + slotCardW / 2, y + slotCardH / 2 + 16);
+          ctx.fillText('Install Module', x + cardW / 2, y + cardH / 2 + 16);
           ctx.textAlign = 'left';
         } else {
-        drawGlassPanel(x, y, slotCardW, slotCardH);
-        ctx.fillStyle = slotAccent;
-        ctx.fillRect(x, y, 4, slotCardH);
-        if (isSelected) {
-          ctx.strokeStyle = UI.accent;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x, y, slotCardW, slotCardH);
+          drawGlassPanel(x, y, cardW, cardH, null, UI.radiusSlot);
+          ctx.fillStyle = slotAccent;
+          ctx.fillRect(x, y, 4, cardH);
+          if (isSelected) {
+            ctx.strokeStyle = UI.accent;
+            ctx.lineWidth = 1;
+            roundRect(ctx, x, y, cardW, cardH, UI.radiusSlot);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(91,141,239,0.06)';
+            roundRect(ctx, x, y, cardW, cardH, UI.radiusSlot);
+            ctx.fill();
+          }
+          ctx.fillStyle = UI.hint;
+          ctx.font = UI.fontHint + 'px sans-serif';
+          ctx.fillText(slot.replace(/([A-Z])/g, ' $1').trim(), x + 22, y + 18);
+          ctx.fillStyle = slotIcon ? UI.accentDim : UI.hint;
+          ctx.font = (UI.fontSectionHeader + 3) + 'px sans-serif';
+          ctx.fillText(slotIcon, x + cardW - 32, y + 44);
+          ctx.fillStyle = UI.header;
+          ctx.font = UI.fontBody + 'px sans-serif';
+          ctx.fillText(gear.name, x + 22, y + 44);
+          ctx.fillStyle = slotAccent;
+          ctx.font = UI.fontLabel + 'px sans-serif';
+          ctx.fillText(gear.rarity, x + 22, y + 62);
         }
-        ctx.fillStyle = UI.hint;
-        ctx.font = UI.fontHint + 'px sans-serif';
-        ctx.fillText(slot.replace(/([A-Z])/g, ' $1').trim(), x + 22, y + 18);
-        ctx.fillStyle = slotIcon ? UI.accentDim : UI.hint;
-        ctx.font = (UI.fontSectionHeader + 3) + 'px sans-serif';
-        ctx.fillText(slotIcon, x + slotCardW - 32, y + 44);
-        ctx.fillStyle = UI.header;
-        ctx.font = UI.fontBody + 'px sans-serif';
-        ctx.fillText(gear.name, x + 22, y + 44);
-        ctx.fillStyle = slotAccent;
-        ctx.font = UI.fontLabel + 'px sans-serif';
-        ctx.fillText(gear.rarity, x + 22, y + 62);
-        }
+        uiHitAreas.push({
+          focus: 'loadout',
+          index: i + 1,
+          x,
+          y,
+          w: cardW,
+          h: cardH,
+          action: () => handleLoadoutSelect(i + 1),
+        });
       }
-      const backY = gridY + 4 * (slotCardH + slotGap) + 20;
-      const backW = 360;
-      const backX = (cw - backW) / 2;
+
       const isBackSelected = menuSelectedIndex === 1 + EQUIPMENT_SLOTS.length;
-      drawGlassButton(backX, backY, backW, 52, isBackSelected);
+      drawGlassButton(layout.backX, layout.backY, layout.backW, backH, isBackSelected);
       ctx.fillStyle = isBackSelected ? UI.title : UI.body;
       ctx.font = (UI.fontBody + 3) + 'px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('Back to Menu', cw / 2, backY + 32);
+      ctx.fillText('Back to Menu', cw / 2, layout.backY + 32);
       ctx.fillStyle = UI.hint;
       ctx.font = UI.fontHint + 'px sans-serif';
-      ctx.fillText('Arrow keys — Navigate  ·  Enter — Cycle gear / Back  ·  Esc — Back', cw / 2, ch - UI.navHintOffset);
+      ctx.fillText('Arrow keys — Navigate  ·  Enter — Cycle gear / Back  ·  Esc — Back', cw / 2, layout.hintY);
       ctx.textAlign = 'left';
+      uiHitAreas.push({
+        focus: 'loadout',
+        index: 1 + EQUIPMENT_SLOTS.length,
+        x: layout.backX,
+        y: layout.backY,
+        w: layout.backW,
+        h: backH,
+        action: () => handleLoadoutSelect(1 + EQUIPMENT_SLOTS.length),
+      });
+      ctx.globalAlpha = 1;
     } else if (menuScreen === 'enemies') {
       const enemyIds = ['chaser', 'charger', 'sniper', 'splitter', 'boss'];
       enemySelectionLerp += (menuSelectedIndex - enemySelectionLerp) * 0.1;
@@ -1970,26 +2925,35 @@ function loop() {
       const previewH = 350;
       const enemyCenterX = enemyAreaW / 2;
       const enemyCenterY = ch * 0.42;
-      const breathScale = 0.98 + 0.04 * Math.sin(t * 2);
+      const breathScale = 1.01 + 0.01 * Math.sin(t * 2);
       const floatY = 3 * Math.sin(t * 1.2);
       const enemySize = previewH * breathScale;
       const enemyLeft = enemyCenterX - enemySize / 2;
       const enemyTop = enemyCenterY - enemySize / 2 + floatY;
       const enemyCenterYf = enemyTop + enemySize / 2;
 
+      const ambientGlow = ctx.createRadialGradient(enemyCenterX, enemyCenterYf, 0, enemyCenterX, enemyCenterYf, enemySize * 1.05);
+      ambientGlow.addColorStop(0, 'rgba(150,40,40,0.05)');
+      ambientGlow.addColorStop(0.6, 'rgba(120,30,30,0.03)');
+      ambientGlow.addColorStop(1, 'transparent');
+      ctx.fillStyle = ambientGlow;
+      ctx.beginPath();
+      ctx.arc(enemyCenterX, enemyCenterYf, enemySize * 1.05, 0, Math.PI * 2);
+      ctx.fill();
+
       const redGlow = ctx.createRadialGradient(enemyCenterX, enemyCenterYf, 0, enemyCenterX, enemyCenterYf, enemySize * 0.7);
-      redGlow.addColorStop(0, 'rgba(180,60,60,0.15)');
-      redGlow.addColorStop(0.4, 'rgba(140,50,50,0.06)');
+      redGlow.addColorStop(0, 'rgba(200,70,70,0.22)');
+      redGlow.addColorStop(0.4, 'rgba(160,60,60,0.1)');
       redGlow.addColorStop(1, 'transparent');
       ctx.fillStyle = redGlow;
       ctx.beginPath();
       ctx.arc(enemyCenterX, enemyCenterYf, enemySize * 0.85, 0, Math.PI * 2);
       ctx.fill();
 
-      const glowPulse = 0.08 + 0.04 * Math.sin(t * 1.5);
+      const glowPulse = 0.1 + 0.06 * Math.sin(t * 1.5);
       const pulseGrad = ctx.createRadialGradient(enemyCenterX, enemyCenterYf, 0, enemyCenterX, enemyCenterYf, enemySize * 0.9);
-      pulseGrad.addColorStop(0, `rgba(200,70,70,${glowPulse})`);
-      pulseGrad.addColorStop(0.6, 'rgba(150,50,50,0.02)');
+      pulseGrad.addColorStop(0, `rgba(220,80,80,${glowPulse})`);
+      pulseGrad.addColorStop(0.6, 'rgba(170,60,60,0.04)');
       pulseGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = pulseGrad;
       ctx.beginPath();
@@ -2019,6 +2983,11 @@ function loop() {
       ctx.font = 'bold ' + UI.fontPanelTitle + 'px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(enemyData?.name || '—', statsX + epad, statsY + 32);
+      const nameFlicker = 0.25 + 0.25 * Math.sin(t * 2.2);
+      ctx.strokeStyle = `rgba(200,70,70,${nameFlicker})`;
+      ctx.lineWidth = 1;
+      roundRect(ctx, statsX + epad - 6, statsY + 12, statsPanelW - epad * 2 + 12, 28, UI.radiusSlot);
+      ctx.stroke();
       ctx.fillStyle = UI.body;
       ctx.font = UI.fontHint + 'px sans-serif';
       const roleW = 80;
@@ -2059,7 +3028,7 @@ function loop() {
         ctx.fillStyle = UI.hint;
         ctx.font = UI.fontLabel + 'px sans-serif';
         ctx.fillText(s.label, statsX + epad, barY - 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(statsX + ebarPad, barY - 8, ebarW, 8);
         ctx.fillStyle = '#c05050';
         ctx.fillRect(statsX + ebarPad, barY - 8, ebarW * fillVal, 8);
@@ -2082,7 +3051,7 @@ function loop() {
       const threatBarX = statsX + ebarPad;
       const threatBarY = threatLabelY + 4;
       for (let i = 0; i < threatMax; i++) {
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(threatBarX + i * (segW + segGap), threatBarY, segW, 10);
         if ((i + 1) / threatMax <= threatFillVal) {
           ctx.fillStyle = '#c05050';
@@ -2121,7 +3090,8 @@ function loop() {
         if (isSelected) {
           ctx.strokeStyle = '#c05050';
           ctx.lineWidth = 1.5;
-          ctx.strokeRect(x, y, w, h);
+          roundRect(ctx, x, y, w, h, UI.radiusPanel);
+          ctx.stroke();
         }
         const thumbSize = 46 * cardScale;
         const thumbLeft = x + (w - thumbSize) / 2;
@@ -2135,11 +3105,39 @@ function loop() {
         ctx.textAlign = 'center';
         ctx.fillText(ed?.name || id, x + w / 2, y + h - 6);
       });
+      uiHitAreas.length = 0;
+      enemyIds.forEach((id, i) => {
+        const lerpIdx = Math.abs(i - enemySelectionLerp);
+        const cardScale = 0.88 + 0.12 * Math.max(0, 1 - lerpIdx);
+        const cardW = 92;
+        const cardH = 92;
+        const cardGap = 18;
+        const totalStripW = enemyIds.length * cardW + (enemyIds.length - 1) * cardGap;
+        const stripStartX = cw / 2 - totalStripW / 2;
+        const w = cardW * cardScale;
+        const h = cardH * cardScale;
+        const x = stripStartX + i * (cardW + cardGap) + (cardW - w) / 2;
+        const y = (ch - UI.carouselStripTopOffset) + (cardH - h) / 2 - (cardScale > 0.96 ? 4 : 0);
+        uiHitAreas.push({
+          focus: 'enemies',
+          index: i,
+          x,
+          y,
+          w,
+          h,
+          action: () => {
+            menuSelectedIndex = i;
+            enemyTransitionAlpha = 0;
+          },
+        });
+      });
 
-      ctx.fillStyle = UI.title;
-      ctx.font = UI.fontScreenTitle + 'px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('ENEMIES', cw / 2, UI.screenTitleY);
+      const enemiesTitleW = drawTrackingText(ctx, 'ENEMIES', cw / 2, UI.screenTitleY + getTitleYOffset(), {
+        spacing: 1.5,
+        font: UI.fontScreenTitle + 'px sans-serif',
+        color: UI.title,
+      });
+      drawHeaderUnderline(ctx, cw / 2, UI.screenTitleY + getTitleYOffset(), enemiesTitleW);
       ctx.fillStyle = UI.hint;
       ctx.font = UI.fontHint + 'px sans-serif';
       ctx.fillText('← → Cycle  ·  Esc Back', cw / 2, ch - UI.navHintOffset);
@@ -2167,11 +3165,14 @@ function loop() {
       const cx = cw / 2;
       let y = contentTop;
 
+      drawTopRightControls(ctx, cw);
+      registerTopRightHitAreas();
+
       ctx.fillStyle = UI.title;
       ctx.font = '44px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText('R O G U E L I K E', cx, y + 42);
+      ctx.fillText('R O G U E L I K E', cx, y + 42 + getTitleYOffset());
       y += 52;
 
       ctx.fillStyle = UI.accent;
@@ -2185,12 +3186,22 @@ function loop() {
       ctx.fillText('Choose your path', cx, y + 16);
       y += 32 + gap;
 
+      uiHitAreas = uiHitAreas.filter((a) => a.onClick);
       MENU_OPTIONS_MAIN.forEach((opt, i) => {
         const isSelected = i === menuSelectedIndex;
         const liftY = isSelected ? -2 : 0;
         const by = buttonsTop + i * (cardH + cardGap) + liftY;
         const px = cx - cardW / 2;
         drawGlassButton(px, by, cardW, cardH, isSelected);
+        uiHitAreas.push({
+          focus: 'main',
+          index: i,
+          x: px,
+          y: by,
+          w: cardW,
+          h: cardH,
+          action: () => handleMainMenuSelect(i),
+        });
         ctx.fillStyle = isSelected ? UI.title : UI.header;
         ctx.font = UI.fontScreenTitle + 'px sans-serif';
         ctx.textAlign = 'center';
@@ -2212,6 +3223,7 @@ function loop() {
       ctx.globalAlpha = 1;
       ctx.textAlign = 'left';
     }
+    if (settingsOpen) drawSettingsPanel(ctx, cw, ch);
     requestAnimationFrame(loop);
     return;
   }
@@ -2261,6 +3273,28 @@ function loop() {
     ctx.font = '16px sans-serif';
     ctx.fillText('Arrow keys + Enter', canvas.width / 2, 420);
     ctx.textAlign = 'left';
+    const buttonW = 260;
+    const buttonH = 36;
+    const retryTop = 300 - 22;
+    const menuTop = 340 - 22;
+    uiHitAreas.push({
+      focus: 'death',
+      index: 0,
+      x: canvas.width / 2 - buttonW / 2,
+      y: retryTop,
+      w: buttonW,
+      h: buttonH,
+      onClick: () => handleDeathSelect(0),
+    });
+    uiHitAreas.push({
+      focus: 'death',
+      index: 1,
+      x: canvas.width / 2 - buttonW / 2,
+      y: menuTop,
+      w: buttonW,
+      h: buttonH,
+      onClick: () => handleDeathSelect(1),
+    });
     requestAnimationFrame(loop);
     return;
   }
@@ -2293,6 +3327,44 @@ function loop() {
     return;
   }
 
+  if (gameState === 'PLAYING' && isPaused) {
+    drawPlayScene();
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const panelW = 320;
+    const panelH = 160;
+    const px = canvas.width / 2 - panelW / 2;
+    const py = canvas.height / 2 - panelH / 2;
+    drawGlassPanel(px, py, panelW, panelH, null, UI.radiusModal);
+    ctx.fillStyle = UI.title;
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', canvas.width / 2, py + 36);
+    const options = ['Resume', 'Settings', 'Back to Menu'];
+    uiHitAreas.length = 0;
+    options.forEach((opt, i) => {
+      const isSel = i === pauseSelectedIndex;
+      ctx.fillStyle = isSel ? UI.title : UI.body;
+      ctx.font = (UI.fontBody + 2) + 'px sans-serif';
+      ctx.fillText(opt, canvas.width / 2, py + 78 + i * 30);
+      uiHitAreas.push({
+        focus: 'pause',
+        index: i,
+        x: px + 40,
+        y: py + 62 + i * 30,
+        w: panelW - 80,
+        h: 26,
+        action: () => handlePauseSelect(i),
+      });
+    });
+    ctx.textAlign = 'left';
+    drawTopRightControls(ctx, canvas.width, -10);
+    registerTopRightHitAreas();
+    if (settingsOpen) drawSettingsPanel(ctx, canvas.width, canvas.height);
+    requestAnimationFrame(loop);
+    return;
+  }
+
   const r = rooms[currentRoomId];
   const hpBeforeDamage = player.currentHp;
   const wallSegments = getWallSegments(room, r.doors);
@@ -2317,11 +3389,13 @@ function loop() {
         const effectiveDmg = Math.max(0.25, baseDmg * (1 - dr));
         e.health = (e.health ?? 1) - effectiveDmg;
         e.hitUntil = performance.now() + HIT_FLASH_MS;
+        audioManager.play('hit_enemy', 'sfx');
         screenShakeMagnitude = Math.min(SHAKE_MAX, screenShakeMagnitude + SHAKE_PER_HIT);
           if (e.health <= 0) {
+          audioManager.play('enemy_die', 'sfx');
           emitGameEvent('onPlayerHit', { target: e });
           emitGameEvent('onEnemyKilled', { enemy: e });
-          runVolatileExplosion(e, player, (amt) => { player.currentHp -= amt; if (player.currentHp <= 0) { gameState = 'DEAD'; deadSelectedIndex = 0; } });
+          runVolatileExplosion(e, player, (amt) => { player.currentHp -= amt; if (player.currentHp <= 0) { enterDeathState(); } });
           if (e.isElite) {
             elitesKilledThisRun++;
             // Fragment drop triggered: elite death. Exploit prevention: elite removed this frame, cannot re-trigger.
@@ -2330,6 +3404,7 @@ function loop() {
             if (result) {
               fragmentsFromElitesThisRun += result.granted;
               fragmentDropFeedbacks.push({ x: result.position.x, y: result.position.y, text: '+' + result.granted, until: performance.now() + FRAGMENT_FEEDBACK_DURATION_MS });
+              audioManager.play('fragment_collect', 'sfx');
             }
           }
           detachAffixModifiers(e);
@@ -2345,8 +3420,10 @@ function loop() {
     if (r.boss && aabbOverlap(b.getAABB(), r.boss.getAABB())) {
       r.boss.health--;
       r.boss.hitUntil = performance.now() + BOSS_HIT_FLASH_MS; // Boss impact: longer flash
+      audioManager.play('hit_enemy', 'sfx');
       screenShakeMagnitude = Math.min(SHAKE_MAX, screenShakeMagnitude + BOSS_SHAKE_PER_HIT); // Boss impact: stronger shake
       if (r.boss.health <= 0) {
+        audioManager.play('boss_die', 'sfx');
         const bossX = r.boss.x;
         const bossY = r.boss.y;
         emitGameEvent('onPlayerHit', { target: r.boss });
@@ -2356,6 +3433,8 @@ function loop() {
         const bossResult = grantBossFragments(heroId, 0, { x: bossX, y: bossY });
         fragmentsFromBossThisRun += bossResult.granted;
         fragmentDropFeedbacks.push({ x: bossX, y: bossY, text: '+' + bossResult.granted, until: performance.now() + FRAGMENT_FEEDBACK_DURATION_MS });
+        audioManager.play('fragment_collect', 'sfx');
+        audioManager.play('reward_pickup', 'sfx');
         deathEffects.push({ x: bossX, y: bossY, w: r.boss.w, h: r.boss.h, color: '#9b59b6', until: performance.now() + DEATH_EFFECT_MS });
         r.boss = null;
       }
@@ -2369,6 +3448,7 @@ function loop() {
   // 2. Room-clear: immediately mark cleared when last enemy/boss defeated.
   if (r.enemies.length === 0 && !r.boss && !r.cleared) {
     r.cleared = true;
+    audioManager.play('room_clear', 'sfx');
     roomsCleared++;
     emitGameEvent('onRoomCleared', { roomId: currentRoomId, room: r });
     updateBossDoorState(); // Boss unlock: recalculate immediately when a room becomes cleared.
@@ -2379,6 +3459,10 @@ function loop() {
         const vicResult = grantVictoryFragments(heroId);
         fragmentsFromVictoryThisRun = vicResult.granted;
         runVictoryFragmentsGranted = true;
+        if (vicResult.granted > 0) {
+          audioManager.play('fragment_collect', 'sfx');
+          audioManager.play('reward_pickup', 'sfx');
+        }
       }
       gameState = 'VICTORY'; // State switch: boss defeated.
     } else {
@@ -2386,8 +3470,10 @@ function loop() {
       // Healing Room: every HEALING_ROOM_INTERVAL non-boss clears, show healing first (priority over upgrades this room).
       if (nonBossRoomsCleared % HEALING_ROOM_INTERVAL === 0) {
         healingChoices = createHealingChoices();
-      } else {
+      } else if (!settingsOpen && !isPaused) {
         upgradeChoices = { choices: pickRandomUpgrades(2) };
+        upgradeSelectedIndex = 0;
+        inputMode = 'upgrade';
       }
       // Demon Shrine: randomly spawn in non-boss cleared rooms. Appears once per room.
       if (Math.random() < 0.35) {
@@ -2430,7 +3516,7 @@ function loop() {
       player.currentHp -= dmg;
       player.x = center.x;
       player.y = center.y;
-      if (player.currentHp <= 0) { gameState = 'DEAD'; deadSelectedIndex = 0; }
+      if (player.currentHp <= 0) { enterDeathState(); }
       break;
     }
   }
@@ -2465,6 +3551,7 @@ function loop() {
     const shrineAABB = wallToAABB(r.shrine);
     if (aabbOverlap(player.getAABB(), shrineAABB)) {
       shrineChoices = { choices: pickRandomShrineDeals() };
+      audioManager.play('shrine_open', 'sfx');
     }
   }
 
@@ -2527,7 +3614,7 @@ function loop() {
         }
         player.x = center.x;
         player.y = center.y;
-        if (player.currentHp <= 0) { gameState = 'DEAD'; deadSelectedIndex = 0; }
+        if (player.currentHp <= 0) { enterDeathState(); }
         break;
       }
     }
@@ -2537,11 +3624,19 @@ function loop() {
       player.currentHp -= dmg; // Demon Shrine: apply enemy damage multiplier
       player.x = center.x;
       player.y = center.y;
-      if (player.currentHp <= 0) { gameState = 'DEAD'; deadSelectedIndex = 0; }
+      if (player.currentHp <= 0) { enterDeathState(); }
     }
   }
   if (player.currentHp < hpBeforeDamage) {
     healthBarDamageFlashUntil = performance.now() + HEALTH_BAR_DAMAGE_FLASH_MS;
+    audioManager.play('player_hit', 'sfx');
+  }
+  let hpRatio = player.currentHp / Math.max(1, player.maxHp);
+  if (!lowHpWarningActive && hpRatio <= 0.25) {
+    audioManager.play('low_hp_warning', 'sfx');
+    lowHpWarningActive = true;
+  } else if (lowHpWarningActive && hpRatio > 0.3) {
+    lowHpWarningActive = false;
   }
 
   // 8. Render — background, floor, wall segments, doors, bullets, enemies, player, "Room Cleared"
@@ -2581,9 +3676,9 @@ function loop() {
     ctx.fillRect(dr.x, dr.y, dr.w, dr.h);
     if (isLocked || isBossLocked) {
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      const mx = dr.x + dr.w / 2; const my = dr.y + dr.h / 2;
+      const midX = dr.x + dr.w / 2; const midY = dr.y + dr.h / 2;
       const bw = Math.max(4, Math.min(dr.w, dr.h) * 0.35);
-      ctx.fillRect(mx - bw / 2, my - 2, bw, 4);
+      ctx.fillRect(midX - bw / 2, midY - 2, bw, 4);
     }
   }
 
@@ -2742,7 +3837,7 @@ function loop() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   // --- Low HP vignette (HP < 30%): red pulse overlay. Visual only. ---
-  const hpRatio = player.currentHp / Math.max(1, player.maxHp);
+  hpRatio = player.currentHp / Math.max(1, player.maxHp);
   if (hpRatio < 0.3 && hpRatio > 0) {
     const vigPulse = 0.15 + 0.12 * Math.sin(performance.now() * 0.008);
     const vigGrad = ctx.createRadialGradient(
@@ -2787,9 +3882,38 @@ function loop() {
     ctx.font = '24px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Choose an upgrade (1 or 2)', canvas.width / 2, 220);
+    const optionW = 420;
+    const optionH = 46;
+    const optionX = canvas.width / 2 - optionW / 2;
+    const optionY = 255;
+    const optionGap = 14;
     ctx.font = '20px sans-serif';
-    ctx.fillText(`1. ${upgradeChoices.choices[0].label}`, canvas.width / 2, 280);
-    ctx.fillText(`2. ${upgradeChoices.choices[1].label}`, canvas.width / 2, 320);
+    upgradeChoices.choices.forEach((choice, i) => {
+      const y = optionY + i * (optionH + optionGap);
+      const isSelected = upgradeSelectedIndex === i;
+      ctx.fillStyle = isSelected ? 'rgba(18,30,50,0.92)' : 'rgba(12,20,36,0.7)';
+      roundRect(ctx, optionX, y, optionW, optionH, 12);
+      ctx.fill();
+      ctx.strokeStyle = isSelected ? 'rgba(120,180,255,0.85)' : 'rgba(80,120,180,0.25)';
+      ctx.lineWidth = isSelected ? 2 : 1;
+      roundRect(ctx, optionX, y, optionW, optionH, 12);
+      ctx.stroke();
+      ctx.fillStyle = isSelected ? '#f1f5f9' : '#cbd5e1';
+      ctx.fillText(`${i + 1}. ${choice.label}`, canvas.width / 2, y + optionH / 2 + 7);
+      uiHitAreas.push({
+        focus: 'upgrade',
+        index: i,
+        x: optionX,
+        y,
+        w: optionW,
+        h: optionH,
+        onClick: () => {
+          upgradeSelectedIndex = i;
+          audioManager.play('menu_select', 'ui');
+          handleUpgradeSelect(i);
+        },
+      });
+    });
     ctx.textAlign = 'left';
   }
 
